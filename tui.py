@@ -227,15 +227,16 @@ class DrillApp(App):
         if self.lucia:
             pairs = [
                 ("w", "word"), ("a/s/d/f", "options"), ("⇧", "in sentence"),
-                ("v", "hide" if self.show_opt_chars else "reveal"),
-                ("←/→", "prev/next"), ("↵/space", "choose"),
+                ("c", "hide question" if self.show_chars else "show question"),
+                ("v", "hide options" if self.show_opt_chars else "reveal options"),
+                ("←/→", "prev/next"), ("↵ / space", "choose"),
                 ("l", "classic"), ("``", "quit"),
             ]
         else:
             pairs = [
                 ("w", "word"), ("⇧", "in sentence"),
                 ("c", "hide" if self.show_chars else "show"),
-                ("←/→", "prev/next"), ("↵", "submit"), ("⌫", "erase"),
+                ("←/→", "prev/next"), ("↵ / space", "submit"), ("⌫", "erase"),
                 ("l", "lucia"), ("``", "quit"),
             ]
         t = Text(" ")
@@ -277,8 +278,9 @@ class DrillApp(App):
             return
         self.quit_armed = False
 
-        if key in ("left", "right"):
-            self.idx = (self.idx + (1 if key == "right" else -1)) % len(self.questions)
+        # if we have an answer picked, space takes us to the next question
+        if key in ("left", "right") or (key == "space" and self.q.get("result")):
+            self.idx = (self.idx + (-1 if key == "left" else 1)) % len(self.questions)
             self.buffer = ""
             self.selected = None
             self._autoplay_prompt()
@@ -332,7 +334,7 @@ class DrillApp(App):
             self.render_body()
             return
 
-        if key == "enter" or "space":
+        if key in ("enter", "space"):
             self.submit_lucia()
 
     def _classic_key(self, key):
@@ -347,7 +349,7 @@ class DrillApp(App):
             self.buffer = self.buffer[:-1]
             self.render_body()
             return
-        if key == "enter" or "space":
+        if key in ("enter", "space"):
             self.submit()
 
     # -- scoring ------------------------------------------------------
