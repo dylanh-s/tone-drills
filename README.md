@@ -33,9 +33,8 @@ generator keep separate copies of the word lists.
 
 **1. The drill —** [`src/data.ts`](src/data.ts):
 
-- **`SONG` / `MING`** — the surname pairs used in classic mode, as
-  `["字", "1-2"]` (word + its tone-pair answer). They're concatenated into
-  `NAMES`.
+- **`NAMES`** — the surname pairs used in classic mode, as `["字", "1-2"]`
+  (word + its tone-pair answer).
 - **`LUCIA_WORDS`** — common words grouped by tone pair (`"1-2": ["中国", …]`),
   used as the lucia-mode options.
 

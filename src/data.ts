@@ -3,7 +3,7 @@
 // (word, answer) — answer is the tone pair being tested: "1-4", "3-1", etc.
 type Pair = [string, string];
 
-const SONG: Pair[] = [
+export const NAMES: Pair[] = [
   ["苏轼", "1-4"], ["苏辙", "1-2"], ["苏颂", "1-4"], ["曾巩", "1-3"],
   ["曾布", "1-4"], ["秦观", "2-1"], ["晏殊", "4-1"], ["张耒", "1-3"],
   ["张栻", "1-4"], ["张浚", "1-4"], ["贺铸", "4-4"], ["李纲", "3-1"],
@@ -16,9 +16,6 @@ const SONG: Pair[] = [
   ["孙觌", "1-2"], ["洪皓", "2-4"], ["王坚", "2-1"], ["余玠", "2-4"],
   ["孟珙", "4-3"], ["杜杲", "4-3"], ["史浩", "3-4"], ["许翰", "3-4"],
   ["董槐", "3-2"],
-];
-
-const MING: Pair[] = [
   ["刘基", "2-1"], ["刘吉", "2-2"], ["宋濂", "4-2"], ["汤和", "1-2"],
   ["邓愈", "4-4"], ["冯胜", "2-4"], ["蓝玉", "2-4"], ["齐泰", "2-4"],
   ["铁铉", "3-4"], ["盛庸", "4-1"], ["解缙", "4-4"], ["杨荣", "2-2"],
@@ -28,8 +25,6 @@ const MING: Pair[] = [
   ["徐阶", "2-1"], ["徐渭", "2-4"], ["高拱", "1-3"], ["聂豹", "4-4"],
   ["薛瑄", "1-1"], ["沈度", "3-4"], ["马愉", "3-2"],
 ];
-
-export const NAMES: Pair[] = [...SONG, ...MING];
 
 // Lucia mode: 5 common daily / HSK words per disyllabic tone pair. The answer
 // is the underlying (citation) tone pair. Neutral tone is written 5 and only
