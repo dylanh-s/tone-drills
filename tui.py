@@ -32,12 +32,6 @@ C_SEL = "black on #79dd6f"     # selected option slot (green)
 
 OPT_KEYS = ["a", "s", "d", "f"]
 
-LOGO = [
-    " ┏┳┓┏━┓┏┓╻┏━╸",
-    "  ┃ ┃ ┃┃┗┫┣╸ ",
-    "  ╹ ┗━┛╹ ╹┗━╸",
-]
-
 
 class DrillApp(App):
     CSS = """
@@ -107,13 +101,10 @@ class DrillApp(App):
         stats.add_row("Score:", Text(f"{self.score} / {self.answered or 0}",
                                       style=f"bold {C_OK}"))
 
-        logo = Text("\n".join(LOGO), style=f"bold {C_ACCENT}")
-
         bar = Table.grid(expand=True)
         bar.add_column()
         bar.add_column()
-        bar.add_column(justify="right")
-        bar.add_row(info, stats, logo)
+        bar.add_row(info, stats)
         self.query_one("#header", Static).update(bar)
 
     def render_body(self):
