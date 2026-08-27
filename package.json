@@ -1,0 +1,13 @@
+{
+  "name": "tone-drill-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Static web port of the tone perception drill.",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}
