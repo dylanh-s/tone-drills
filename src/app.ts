@@ -135,9 +135,7 @@ export class DrillApp {
     const q = this.q;
     const answered = q.userAnswer !== null;
     const panel = this.panel("tone-drill", "b-accent");
-    // Mode class drives a fixed per-mode min-height so answering and result
-    // views are the same height (no re-centre/jump between them).
-    const inner = el("div", this.lucia ? "panel-body lucia" : "panel-body");
+    const inner = el("div", "panel-body");
 
     inner.append(el("div", "dim small", `Question ${this.idx + 1}`));
 
