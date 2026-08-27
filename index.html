@@ -55,7 +55,10 @@
     .gval { color: var(--white); }
 
     /* -- body / panel -- */
-    #body { flex: 1; display: flex; align-items: center; justify-content: center; padding: 10px 2px 18px; }
+    /* Top-anchored (not centred): the panel grows/shrinks from its bottom
+       edge, so the hanzi and options stay put across answer -> result while the
+       border hugs the content — no reserved whitespace inside the box. */
+    #body { flex: 1; display: flex; align-items: flex-start; justify-content: center; padding: 10px 2px 18px; }
     .panel {
       position: relative;
       width: 100%;
@@ -110,6 +113,7 @@
       text-align: left;
       font-family: var(--mono);
       font-size: 18px;
+      line-height: 1.4;              /* match .opt-result so rows are identical height */
       padding: 9px 12px;
       background: var(--bg2);
       color: var(--white);
@@ -138,6 +142,7 @@
       gap: 8px;
       text-align: left;
       font-size: 18px;
+      line-height: 1.4;               /* match .opt-label so rows are identical height */
       letter-spacing: 2px;
       padding: 9px 12px;              /* match .opt-label box height */
       border: 1px solid transparent;
