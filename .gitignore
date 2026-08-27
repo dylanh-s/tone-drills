@@ -228,3 +228,10 @@ test.mp3
 drill_key.txt
 
 # questions/ (pre-generated drill audio) is committed on purpose
+
+# Node / TypeScript web build
+node_modules/
+
+# Built bundle (produced by npm run build / CI, not committed)
+js/
+_site/
