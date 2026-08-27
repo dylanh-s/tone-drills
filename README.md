@@ -23,22 +23,13 @@ Use `npm run watch` to recompile on save while developing.
 
 Add `?seed=123` to the URL to reproduce a specific draw.
 
-### Deploy to GitHub Pages
-
-The compiled `js/` output is committed, so no CI build step is needed:
-
-1. Commit `index.html`, `js/`, `src/`, and `questions/+0/`.
-2. In the repo's **Settings → Pages**, set **Source: Deploy from a branch**,
-   branch `main`, folder `/ (root)`.
-3. The site publishes at `https://<user>.github.io/<repo>/`.
-
 ### Layout
 
 | Path | What |
 |------|------|
 | `index.html` | page shell + styles (the k9s palette) |
 | `src/*.ts` | source: `data`, `rng`, `logic`, `audio`, `app`, `main` |
-| `js/*.js` | compiled output (committed, served by Pages) |
+| `js/*.js` | compiled output (committed) |
 | `questions/+0/<voice>/<word>.mp3` | pre-generated clips (bare + `_frame`) |
 
 The web port uses its own seeded RNG, so a given seed is stable within the site
