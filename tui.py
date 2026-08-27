@@ -228,7 +228,7 @@ class DrillApp(App):
             pairs = [
                 ("w", "word"), ("a/s/d/f", "options"), ("⇧", "in sentence"),
                 ("v", "hide" if self.show_opt_chars else "reveal"),
-                ("←/→", "prev/next"), ("↵", "choose"),
+                ("←/→", "prev/next"), ("↵/space", "choose"),
                 ("l", "classic"), ("``", "quit"),
             ]
         else:
@@ -332,7 +332,7 @@ class DrillApp(App):
             self.render_body()
             return
 
-        if key == "enter":
+        if key == "enter" or "space":
             self.submit_lucia()
 
     def _classic_key(self, key):
@@ -347,7 +347,7 @@ class DrillApp(App):
             self.buffer = self.buffer[:-1]
             self.render_body()
             return
-        if key == "enter":
+        if key == "enter" or "space":
             self.submit()
 
     # -- scoring ------------------------------------------------------
