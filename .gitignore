@@ -222,8 +222,9 @@ __marimo__/
 
 # Generated drill output
 drill_out/
-questions/
 lucia/
 drill.mp3
 test.mp3
 drill_key.txt
+
+# questions/ (pre-generated drill audio) is committed on purpose
