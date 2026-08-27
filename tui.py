@@ -19,6 +19,8 @@ from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.widgets import Static
 
+import random
+
 from tone_drill import (
     MAX_VOICES,
     SPEED_DEFAULT,
@@ -27,6 +29,8 @@ from tone_drill import (
     SPEED_STEP,
     VOICES_DEFAULT,
     _has_clip,
+    build_lucia_options,
+    build_questions,
     judge,
     pick_voice,
     question_clip,
@@ -70,6 +74,7 @@ class DrillApp(App):
         self.show_chars = True     # reveal the question hanzi while answering ('c')
         self.show_opt_chars = False  # reveal the option hanzi ('v')
         self.show_help = False     # full controls overlay (hold '?')
+        self.results = False       # end-of-drill summary screen
         self._help_timer = None    # closes the overlay when '?' stops repeating
         self.buffer = ""           # digits typed for the current item (classic)
         self.selected = None       # highlighted option index (lucia)
@@ -126,7 +131,9 @@ class DrillApp(App):
         stats = Table.grid(padding=(0, 1))
         stats.add_column(justify="right", style=C_ACCENT)
         stats.add_column()
-        stats.add_row("Item:", Text(f"{self.idx + 1} / {len(self.questions)}", style="bold white"))
+        total = len(self.questions)
+        item = f"{total + 1} / {total}" if self.results else f"{self.idx + 1} / {total}"
+        stats.add_row("Item:", Text(item, style="bold white"))
         stats.add_row("Answered:", Text(f"{self.answered} / {len(self.questions)}", style="white"))
         stats.add_row("Score:", Text(f"{self.score} / {self.answered or 0}",
                                       style=f"bold {C_OK}"))
@@ -140,6 +147,9 @@ class DrillApp(App):
     def render_body(self):
         if self.show_help:
             self.render_help()
+            return
+        if self.results:
+            self.render_results()
             return
         q = self.q
         answered = q["user_answer"] is not None
@@ -170,6 +180,82 @@ class DrillApp(App):
             padding=(1, 4),
         )
         self.query_one("#body", Static).update(panel)
+
+    # -- results screen ----------------------------------------------
+    def render_results(self):
+        total = len(self.questions)
+        correct = self.score
+        sandhi = sum(1 for x in self.questions if x.get("result") == "sandhi")
+        wrong = total - correct - sandhi
+        pct = (correct / total * 100) if total else 0
+
+        lines = [
+            Text("drill complete", style=f"bold {C_ACCENT}", justify="center"),
+            Text(""),
+            Text(f"{correct} / {total}", style=f"bold {C_OK}", justify="center"),
+            Text(f"{pct:.0f}%", style=C_DIM, justify="center"),
+            Text(""),
+        ]
+
+        tally = Table.grid(padding=(0, 2))
+        tally.add_column(justify="right")
+        tally.add_column(justify="left", style=C_DIM)
+        tally.add_row(Text(str(correct), style=f"bold {C_OK}"), "correct")
+        if sandhi:
+            tally.add_row(Text(str(sandhi), style=f"bold {C_WARN}"),
+                          "sounded right (sandhi, not counted)")
+        tally.add_row(Text(str(wrong), style=f"bold {C_BAD}"), "wrong")
+        lines.append(tally)
+
+        # List what you missed, so the recap is actionable.
+        missed = [x for x in self.questions if not x["correct"]]
+        if missed:
+            lines += [Text(""), Text("missed", style=f"bold {C_DIM}")]
+            miss_grid = Table.grid(padding=(0, 2))
+            miss_grid.add_column(style="white")           # word
+            miss_grid.add_column(justify="right", style=C_BAD)   # your answer
+            miss_grid.add_column(style=C_DIM)             # arrow
+            miss_grid.add_column(style=f"bold {C_OK}")    # correct answer
+            for x in missed:
+                miss_grid.add_row(
+                    x["word"], x["user_answer"] or "—", "→", x["answer"])
+            lines.append(miss_grid)
+
+        lines += [
+            Text(""),
+            Text.assemble(
+                (" r ", C_KEY), ("  restart    ", "#c8c8c8"),
+                (" ← ", C_KEY), ("  review    ", "#c8c8c8"),
+                (" `` ", C_KEY), ("  quit", "#c8c8c8"),
+                justify="center"),
+        ]
+
+        panel = Panel(
+            Align.center(Group(*lines), vertical="middle"),
+            border_style=C_OK if pct >= 80 else C_ACCENT,
+            title="results",
+            title_align="left",
+            padding=(1, 4),
+        )
+        self.query_one("#body", Static).update(panel)
+
+    def restart(self):
+        """Start over with a fresh random draw.
+
+        A new seed means new names, so we rebuild the question set and its Lucia
+        options from scratch. The whole corpus is pre-generated, so no synthesis
+        is needed here; if a clip were somehow missing, playback just flashes a
+        warning rather than blocking the restart.
+        """
+        self.seed = random.randrange(1_000_000)
+        self.questions = build_questions(len(self.questions), self.seed)
+        build_lucia_options(self.questions, self.seed)
+        self.results = False
+        self.idx = 0
+        self.buffer = ""
+        self.selected = None
+        self._autoplay_prompt()
+        self.render_all()
 
     # -- help overlay ('?') ------------------------------------------
     def _close_help(self):
@@ -253,7 +339,7 @@ class DrillApp(App):
                 ))
             else:
                 verdict = judge(q["answer"], opt["pair"])
-                picked = (i == q["sel_idx"])
+                picked = (i == q.get("sel_idx"))
                 if verdict == "correct":
                     mark, style = "✓", C_OK
                 elif verdict == "sandhi":
@@ -310,7 +396,9 @@ class DrillApp(App):
         return lines
 
     def render_footer(self):
-        if self.lucia:
+        if self.results:
+            pairs = [("r", "restart"), ("←", "review"), ("``", "quit")]
+        elif self.lucia:
             pairs = [
                 ("w", "word"), ("a/s/d/f", "options"), ("⇧", "in sentence"),
                 ("←/→", "prev/next"), ("↵ / space", "choose"),
@@ -410,9 +498,35 @@ class DrillApp(App):
             return
         self.quit_armed = False
 
-        # if we have an answer picked, space takes us to the next question
-        if key in ("left", "right") or (key == "space" and self.q.get("result")):
-            self.idx = (self.idx + (-1 if key == "left" else 1)) % len(self.questions)
+        # The results screen sits one page past the last item (page count+1).
+        # From here ← pages back to the last question; 'r' restarts; there's
+        # nowhere further forward to go.
+        if self.results:
+            if key == "r":
+                self.restart()
+            elif key == "left":
+                self.results = False
+                self._autoplay_prompt()
+                self.render_all()
+            return
+
+        # Paging. ← / → move between items; space / enter step forward too, but
+        # only once the current item is answered (so they double as submit while
+        # you're still working). Stepping forward off the last *answered* item
+        # lands on the results page rather than wrapping around.
+        last = len(self.questions) - 1
+        forward = key == "right" or (key in ("space", "enter") and self.q.get("result"))
+        back = key == "left"
+        if forward or back:
+            if forward and self.idx == last:
+                if self.q.get("result"):        # last item answered -> results
+                    self.results = True
+                    self.stop_playback()
+                    self.render_all()
+                return                          # otherwise nothing past the end
+            if back and self.idx == 0:
+                return                          # nothing before the first item
+            self.idx += 1 if forward else -1
             self.buffer = ""
             self.selected = None
             self._autoplay_prompt()
