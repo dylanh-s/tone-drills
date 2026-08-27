@@ -140,21 +140,25 @@ export class DrillApp {
     inner.append(el("div", "dim small", `Question ${this.idx + 1}`));
 
     // Prompt word with explicit play controls on the right (mouse-friendly),
-    // styled and aligned like the per-option play buttons below.
+    // styled and aligned like the per-option play buttons below. A matching
+    // spacer on the left keeps the hanzi itself centred in the panel.
     const hanziRow = el("div", "hanzi-row");
+    hanziRow.append(el("div", "hanzi-spacer"));
     if (this.showChars || answered) {
       hanziRow.append(el("div", "hanzi", q.word));
     } else {
       const masked = [...q.word].map(() => "＿").join(" ");
       hanziRow.append(el("div", "hanzi dim", masked));
     }
+    const playControls = el("div", "hanzi-play");
     const playSentence = el("button", "opt-sentence", "▶ 句");
     playSentence.title = "play it inside a sentence  (⇧w)";
     playSentence.onclick = () => this.requestPlay(q.word, true);
     const playWord = el("button", "opt-sentence", "▶");
     playWord.title = "play the word  (w)";
     playWord.onclick = () => this.requestPlay(q.word, false);
-    hanziRow.append(playSentence, playWord);
+    playControls.append(playSentence, playWord);
+    hanziRow.append(playControls);
     inner.append(hanziRow);
 
     if (this.lucia) {
