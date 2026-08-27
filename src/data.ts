@@ -1,7 +1,5 @@
 // Corpus and config, ported from tone_drill.py.
 
-export const FRAME = "请说 {} 这个词";
-
 // (word, answer) — answer is the tone pair being tested: "1-4", "3-1", etc.
 type Pair = [string, string];
 

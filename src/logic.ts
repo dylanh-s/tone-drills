@@ -2,7 +2,6 @@
 
 import {
   ALL_PAIRS,
-  FRAME,
   LUCIA_DOUBLE_CHANCE,
   LUCIA_OPTIONS,
   LUCIA_WORDS,
@@ -104,8 +103,4 @@ export function buildLuciaOptions(questions: Question[], seed: number): void {
     rng.shuffle(opts);
     q.options = opts;
   });
-}
-
-export function framed(word: string): string {
-  return FRAME.replace("{}", word);
 }
