@@ -66,6 +66,34 @@ MING = [
 
 NAMES = SONG + MING
 
+# Lucia mode: 5 common daily / HSK words per disyllabic tone pair. The answer
+# is the underlying (citation) tone pair. Neutral tone is written 5 and only
+# ever falls on the second syllable. Manually reviewed — keep it common.
+LUCIA_WORDS = {
+    "1-1": ["今天", "咖啡", "飞机", "星期", "医生"],
+    "1-2": ["中国", "欢迎", "生活", "家庭", "花园"],
+    "1-3": ["铅笔", "身体", "开始", "方法", "工厂"],
+    "1-4": ["工作", "商店", "音乐", "生日", "车站"],
+    "2-1": ["时间", "房间", "明天", "阳光", "农村"],
+    "2-2": ["银行", "学习", "完成", "邮局", "足球"],
+    "2-3": ["啤酒", "牛奶", "白酒", "苹果", "头脑"],
+    "2-4": ["学校", "结束", "邮票", "图片", "节日"],
+    "3-1": ["老师", "北京", "火车", "手机", "起飞"],
+    "3-2": ["美国", "语言", "旅行", "起床", "祖国"],
+    "3-3": ["你好", "水果", "手表", "广场", "洗澡"],
+    "3-4": ["考试", "使用", "跑步", "眼镜", "请假"],
+    "4-1": ["面包", "上班", "汽车", "大家", "后天"],
+    "4-2": ["复习", "上学", "面条", "大学", "后来"],
+    "4-3": ["电脑", "跳舞", "报纸", "电影", "汉语"],
+    "4-4": ["再见", "电话", "教室", "上课", "快乐"],
+    "1-5": ["东西", "衣服", "桌子", "关系", "先生"],
+    "2-5": ["觉得", "时候", "朋友", "名字", "什么"],
+    "3-5": ["喜欢", "我们", "眼睛", "椅子", "耳朵"],
+    "4-5": ["漂亮", "认识", "告诉", "意思", "客气"],
+}
+
+ALL_PAIRS = list(LUCIA_WORDS)
+
 # Standard-accent zh-CN voices. Run `edge-tts --list-voices | grep zh-CN`
 # for the full set.
 VOICES = [
@@ -83,6 +111,12 @@ COUNT = 20
 OUT_DIR = Path("drill_out")
 OUT_FILE = Path("drill.mp3")
 KEY_FILE = Path("drill_key.txt")
+
+# Lucia mode caches its dictionary audio here, in a per-voice subfolder.
+LUCIA_DIR = Path("lucia")
+LUCIA_VOICE = VOICES[0]
+LUCIA_OPTIONS = 4          # options shown per question
+LUCIA_DOUBLE_CHANCE = 0.25  # chance a question has two correct options
 
 # ----------------------------------------------------------------------
 # Shared helpers
@@ -103,6 +137,26 @@ def pick_items(count: int, seed, shuffle: bool = SHUFFLE):
 
 async def synth(text: str, voice: str, path: Path):
     await edge_tts.Communicate(text, voice, rate=RATE).save(str(path))
+
+
+def tone_digits(pair: str) -> str:
+    """'2-4' -> '24', '3-5' -> '35'. Strips any non-digit."""
+    return "".join(ch for ch in pair if ch.isdigit())
+
+
+def judge(answer_pair: str, guess_pair: str) -> str:
+    """Score a guess against the underlying answer.
+
+    Returns 'correct', 'sandhi', or 'wrong'. The sandhi case is a 3-3 item
+    guessed as 2-3: that's how it's actually pronounced, so we flag it rather
+    than call it a plain miss — but it is not counted as correct.
+    """
+    a, g = tone_digits(answer_pair), tone_digits(guess_pair)
+    if g == a:
+        return "correct"
+    if a == "33" and g == "23":
+        return "sandhi"
+    return "wrong"
 
 
 def make_silence(ms: int, path: Path):
@@ -233,9 +287,82 @@ def build_questions(count: int, seed):
     return questions
 
 
+def lucia_clip(word: str, voice: str, frame: bool = False) -> Path:
+    """Path for a Lucia dictionary clip, cached per voice."""
+    name = f"{word}_frame.mp3" if frame else f"{word}.mp3"
+    return LUCIA_DIR / voice / name
+
+
+def build_lucia_clips(voice: str):
+    """Generate (or reuse) the word + sentence clip for every dictionary word."""
+    (LUCIA_DIR / voice).mkdir(parents=True, exist_ok=True)
+
+    to_make = []  # (text, path)
+    for words in LUCIA_WORDS.values():
+        for word in words:
+            word_clip = lucia_clip(word, voice)
+            frame_clip = lucia_clip(word, voice, frame=True)
+            if not word_clip.exists():
+                to_make.append((word, word_clip))
+            if not frame_clip.exists():
+                to_make.append((FRAME.format(word), frame_clip))
+
+    if to_make:
+        print(f"Generating {len(to_make)} Lucia clip(s)…")
+
+        async def _gen():
+            for n, (text, path) in enumerate(to_make, start=1):
+                await synth(text, voice, path)
+                print(f"  [{n}/{len(to_make)}] {text}")
+
+        asyncio.run(_gen())
+    else:
+        print("All Lucia clips cached.")
+
+
+def build_lucia_options(questions, seed, voice: str):
+    """Attach 4 tone-pair options to each question.
+
+    Always at least one option matches the question's tone pair; sometimes two
+    (a second word of the same pair), so the drill can reveal that more than one
+    answer was correct. The rest are distinct non-matching pairs. Deterministic
+    for a given (seed, index).
+    """
+    for idx, q in enumerate(questions):
+        rng = random.Random(f"{seed}-{idx}-lucia")
+        answer = q["answer"]
+
+        pool = LUCIA_WORDS.get(answer)
+        if not pool:
+            q["options"] = []  # answer pair outside the dictionary; skip
+            continue
+
+        n_correct = 2 if (len(pool) >= 2 and rng.random() < LUCIA_DOUBLE_CHANCE) else 1
+        correct_words = rng.sample(pool, n_correct)
+        distract_pairs = rng.sample(
+            [p for p in ALL_PAIRS if p != answer], LUCIA_OPTIONS - n_correct
+        )
+
+        opts = [(answer, w) for w in correct_words]
+        opts += [(p, rng.choice(LUCIA_WORDS[p])) for p in distract_pairs]
+        rng.shuffle(opts)
+
+        q["options"] = [
+            {
+                "pair": pair,
+                "word": word,
+                "word_clip": lucia_clip(word, voice),
+                "frame_clip": lucia_clip(word, voice, frame=True),
+            }
+            for pair, word in opts
+        ]
+
+
 def run_interactive(count: int, seed):
     check_bin("ffplay")
     questions = build_questions(count, seed)
+    build_lucia_clips(LUCIA_VOICE)
+    build_lucia_options(questions, seed, LUCIA_VOICE)
     # Imported lazily so `--mode file` doesn't require textual.
     from tui import DrillApp
     DrillApp(questions=questions, seed=seed).run()
