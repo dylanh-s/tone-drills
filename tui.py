@@ -26,6 +26,7 @@ from tone_drill import (
     SPEED_MIN,
     SPEED_STEP,
     VOICES_DEFAULT,
+    _has_clip,
     judge,
     pick_voice,
     question_clip,
@@ -344,7 +345,7 @@ class DrillApp(App):
         just plays from the cache."""
         voice = pick_voice(word, self.num_voices, self.seed)
         path = question_clip(word, voice, self.speed, frame)
-        if path.exists():
+        if _has_clip(path):
             self.flash = f"▶ {label}"
             self.play(path)
         else:  # shouldn't happen after pre-generation

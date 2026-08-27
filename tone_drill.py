@@ -365,14 +365,21 @@ def reachable_clips(questions, seed):
     return jobs
 
 
+def _has_clip(path: Path) -> bool:
+    """True if `path` is a usable cached clip. A zero-byte file (a synth that
+    failed or was interrupted mid-write) does NOT count — otherwise it would be
+    treated as cached forever and never regenerated."""
+    return path.exists() and path.stat().st_size > 0
+
+
 def _generate(jobs, concurrency: int = 12):
     """Synthesize the missing clips in `jobs`, at most `concurrency` at a time.
 
     Each job is a 4-tuple ``(text, voice, speed, path)`` — the string to speak,
     the voice to use, the speed offset, and the mp3 to write. So ``job[3]`` is
-    the output path; we skip jobs whose file already exists (cache hit).
+    the output path; we skip jobs whose clip already exists and is non-empty.
     """
-    jobs = [job for job in jobs if not job[3].exists()]  # job[3] == path
+    jobs = [job for job in jobs if not _has_clip(job[3])]  # job[3] == path
     if not jobs:
         print("All clips cached.")
         return
