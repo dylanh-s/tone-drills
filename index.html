@@ -76,7 +76,11 @@
       font-size: 13px;
     }
     .panel.b-ok > .panel-title { color: var(--ok); }
-    .panel-body { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; }
+    /* Fixed min-height per mode so the panel never resizes between the
+       answering and result views (which would otherwise re-centre and jump).
+       Each value clears that mode's tallest state; content is centred within. */
+    .panel-body { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 10px; min-height: 300px; }
+    .panel-body.lucia { min-height: 500px; }
 
     .hanzi { font-size: 42px; font-weight: 700; letter-spacing: 4px; color: var(--white); }
     .hanzi.dim { color: var(--dim); }
