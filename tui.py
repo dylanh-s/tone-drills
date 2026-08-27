@@ -19,7 +19,19 @@ from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.widgets import Static
 
-from tone_drill import judge, tone_digits
+from tone_drill import (
+    MAX_VOICES,
+    SPEED_DEFAULT,
+    SPEED_MAX,
+    SPEED_MIN,
+    SPEED_STEP,
+    VOICES_DEFAULT,
+    judge,
+    pick_voice,
+    question_clip,
+    rate_str,
+    tone_digits,
+)
 
 # k9s-ish palette
 C_KEY = "black on #50b4ff"      # highlighted shortcut key
@@ -32,11 +44,18 @@ C_SEL = "black on #79dd6f"     # selected option slot (green)
 
 OPT_KEYS = ["a", "s", "d", "f"]
 
+# Terminals report key *presses* (with auto-repeat) but no key *release*, so
+# "hold ? for help" is emulated: each '?' keeps the overlay open and (re)arms a
+# timer; when the repeats stop — i.e. you let go — the timer fires and closes
+# it. Must comfortably exceed the OS key-repeat interval; bump it if the overlay
+# flickers while held.
+HELP_HOLD_TIMEOUT = 0.5
+
 
 class DrillApp(App):
     CSS = """
     Screen { background: #101418; }
-    #header { height: 5; padding: 0 1; }
+    #header { height: 7; padding: 0 1; }
     #body   { height: 1fr; padding: 1 2; content-align: center middle; }
     #footer { height: 1; background: #1b2027; color: #c8c8c8; }
     """
@@ -49,11 +68,15 @@ class DrillApp(App):
         self.lucia = False        # toggle: pick-from-options mode ('l')
         self.show_chars = True     # reveal the question hanzi while answering ('c')
         self.show_opt_chars = False  # reveal the option hanzi ('v')
+        self.show_help = False     # full controls overlay (hold '?')
+        self._help_timer = None    # closes the overlay when '?' stops repeating
         self.buffer = ""           # digits typed for the current item (classic)
         self.selected = None       # highlighted option index (lucia)
         self.quit_armed = False    # first of the two ` presses to quit
         self.flash = ""            # transient status line (e.g. "▶ playing")
         self._proc = None          # current ffplay process
+        self.speed = SPEED_DEFAULT      # text speed offset, '-' / '+' (percent)
+        self.num_voices = VOICES_DEFAULT  # voices in play, '[' / ']'
 
     # -- layout -------------------------------------------------------
     def compose(self) -> ComposeResult:
@@ -69,6 +92,10 @@ class DrillApp(App):
     @property
     def q(self):
         return self.questions[self.idx]
+
+    @property
+    def current_voice(self):
+        return pick_voice(self.q["word"], self.num_voices, self.seed)
 
     @property
     def answered(self):
@@ -90,7 +117,9 @@ class DrillApp(App):
         info.add_column()
         info.add_row("Mode:", Text("lucia" if self.lucia else "classic",
                                     style="bold white"))
-        info.add_row("Voice:", Text(self.q["voice"], style="white"))
+        info.add_row("Voice:", Text(self.current_voice, style="white"))
+        info.add_row("Speed:", Text(rate_str(self.speed), style="white"))
+        info.add_row("Voices:", Text(f"{self.num_voices} / {MAX_VOICES}", style="white"))
         info.add_row("Seed:", Text(str(self.seed), style="white"))
 
         stats = Table.grid(padding=(0, 1))
@@ -108,6 +137,9 @@ class DrillApp(App):
         self.query_one("#header", Static).update(bar)
 
     def render_body(self):
+        if self.show_help:
+            self.render_help()
+            return
         q = self.q
         answered = q["user_answer"] is not None
         lines = [Text(f"Question {self.idx + 1}", style=C_DIM), Text("")]
@@ -133,6 +165,59 @@ class DrillApp(App):
             Align.center(Group(*lines), vertical="middle"),
             border_style=C_ACCENT,
             title="tone-drill",
+            title_align="left",
+            padding=(1, 4),
+        )
+        self.query_one("#body", Static).update(panel)
+
+    # -- help overlay ('?') ------------------------------------------
+    def _close_help(self):
+        """Fired once '?' stops repeating (released)."""
+        self._help_timer = None
+        if self.show_help:
+            self.show_help = False
+            self.render_all()
+
+    def render_help(self):
+        def section(title, rows):
+            grid = Table.grid(padding=(0, 2))
+            grid.add_column(justify="right", style=C_ACCENT, no_wrap=True)
+            grid.add_column(style="white")
+            for key, desc in rows:
+                grid.add_row(key, desc)
+            return Group(Text(title, style=f"bold {C_ACCENT}"), grid, Text(""))
+
+        body = Group(
+            section("Playback", [
+                ("w", "play the word"),
+                ("⇧ w", "play it inside a sentence"),
+                ("a s d f", "play an option  (lucia)"),
+                ("⇧ a/s/d/f", "play an option inside a sentence  (lucia)"),
+            ]),
+            section("Answering", [
+                ("1 2 3 4", "type the two tones  (classic)"),
+                ("⌫", "erase a digit  (classic)"),
+                ("↵ / space", "submit / choose"),
+                ("← / →", "previous / next question"),
+            ]),
+            section("Display", [
+                ("c", "show / hide the question characters"),
+                ("v", "show / hide the option characters  (lucia)"),
+            ]),
+            section("Settings", [
+                ("- / +", "text speed  (0% to ±25%, 5% steps)"),
+                ("[ / ]", "voices in play  (1-4)"),
+            ]),
+            section("Modes & session", [
+                ("l", "switch classic / lucia"),
+                ("?", "hold to show these controls"),
+                ("` `", "quit  (press twice)"),
+            ]),
+        )
+        panel = Panel(
+            Align.center(body, vertical="middle"),
+            border_style=C_ACCENT,
+            title="controls",
             title_align="left",
             padding=(1, 4),
         )
@@ -227,17 +312,14 @@ class DrillApp(App):
         if self.lucia:
             pairs = [
                 ("w", "word"), ("a/s/d/f", "options"), ("⇧", "in sentence"),
-                ("c", "hide question" if self.show_chars else "show question"),
-                ("v", "hide options" if self.show_opt_chars else "reveal options"),
                 ("←/→", "prev/next"), ("↵ / space", "choose"),
-                ("l", "classic"), ("``", "quit"),
+                ("l", "classic"), ("?", "help"), ("``", "quit"),
             ]
         else:
             pairs = [
                 ("w", "word"), ("⇧", "in sentence"),
-                ("c", "hide" if self.show_chars else "show"),
                 ("←/→", "prev/next"), ("↵ / space", "submit"), ("⌫", "erase"),
-                ("l", "lucia"), ("``", "quit"),
+                ("l", "lucia"), ("?", "help"), ("``", "quit"),
             ]
         t = Text(" ")
         for key, desc in pairs:
@@ -256,15 +338,64 @@ class DrillApp(App):
             ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", str(path)]
         )
 
+    def request_play(self, word: str, frame: bool, label: str):
+        """Play `word` (bare or framed) at the current speed, using the voice
+        picked for the current voice count. All clips are pre-generated, so this
+        just plays from the cache."""
+        voice = pick_voice(word, self.num_voices, self.seed)
+        path = question_clip(word, voice, self.speed, frame)
+        if path.exists():
+            self.flash = f"▶ {label}"
+            self.play(path)
+        else:  # shouldn't happen after pre-generation
+            self.flash = f"⚠ missing audio: {path.name}"
+        self.render_body()
+
     def _autoplay_prompt(self):
         """Play the prompt word as the question opens."""
-        self.play(self.q["word_clip"])
-        self.flash = "▶ word"
+        self.request_play(self.q["word"], False, "word")
+
+    # -- speed / voices ----------------------------------------------
+    def change_speed(self, delta: int):
+        new = max(SPEED_MIN, min(SPEED_MAX, self.speed + delta))
+        if new == self.speed:
+            self.flash = f"speed at {'min' if delta < 0 else 'max'} ({rate_str(self.speed)})"
+            self.render_all()
+            return
+        self.speed = new
+        self.render_all()
+        # Re-play the prompt so the new speed is heard right away.
+        self.request_play(self.q["word"], False, "word")
+
+    def change_voices(self, delta: int):
+        new = max(1, min(MAX_VOICES, self.num_voices + delta))
+        if new == self.num_voices:
+            self.flash = f"voices at {'min' if delta < 0 else 'max'} ({self.num_voices})"
+            self.render_all()
+            return
+        self.num_voices = new
+        self.render_all()
+        # The prompt's voice may have changed with the count — play the new one.
+        self.request_play(self.q["word"], False, "word")
 
     # -- input --------------------------------------------------------
     def on_key(self, event) -> None:
         key = event.key
         self.flash = ""
+
+        # Hold '?' for the controls overlay: each press (incl. auto-repeat) keeps
+        # it open and re-arms the close timer; letting go lets the timer fire.
+        if key in ("question_mark", "?"):
+            if self._help_timer is not None:
+                self._help_timer.stop()
+            self._help_timer = self.set_timer(HELP_HOLD_TIMEOUT, self._close_help)
+            if not self.show_help:
+                self.show_help = True
+                self.render_all()
+            return
+        # While the overlay is up, swallow other keys so you can't answer blind.
+        if self.show_help:
+            return
 
         # Two backtick presses to quit; any other key disarms.
         if key in ("grave_accent", "`"):
@@ -290,9 +421,7 @@ class DrillApp(App):
         # w plays the prompt word; Shift+W plays it inside a sentence.
         if key in ("w", "W"):
             frame = key == "W"
-            self.play(self.q["frame_clip" if frame else "word_clip"])
-            self.flash = "▶ sentence" if frame else "▶ word"
-            self.render_body()
+            self.request_play(self.q["word"], frame, "sentence" if frame else "word")
             return
 
         if key == "c":
@@ -305,6 +434,20 @@ class DrillApp(App):
             self.buffer = ""
             self.selected = None
             self.render_all()
+            return
+
+        # -/+ change text speed; [/] change how many voices are in play.
+        if key in ("minus", "-", "underscore", "_", "kp_subtract"):
+            self.change_speed(-SPEED_STEP)
+            return
+        if key in ("plus", "+", "equals_sign", "equals", "=", "kp_add"):
+            self.change_speed(SPEED_STEP)
+            return
+        if key in ("left_square_bracket", "["):
+            self.change_voices(-1)
+            return
+        if key in ("right_square_bracket", "]"):
+            self.change_voices(1)
             return
 
         if self.lucia:
@@ -329,9 +472,8 @@ class DrillApp(App):
             shifted = key.isupper()
             if q["user_answer"] is None:
                 self.selected = i
-            self.play(q["options"][i]["frame_clip" if shifted else "word_clip"])
-            self.flash = "▶ sentence" if shifted else "▶ word"
-            self.render_body()
+            self.request_play(q["options"][i]["word"], shifted,
+                              "sentence" if shifted else "word")
             return
 
         if key in ("enter", "space"):

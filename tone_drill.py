@@ -4,11 +4,15 @@ Tone perception drill generator.
 
 Two modes:
 
-    interactive  (default)  A k9s-style terminal UI. Pick 20 names, generate
-                            (or reuse cached) audio, then work through them one
-                            at a time: play the word on its own or in a
-                            请说 —— 这个词 frame, replay as needed, type the
-                            tones (e.g. `14` for 1-4) and get instant scoring.
+    interactive  (default)  A k9s-style terminal UI. Pick 20 names, pre-generate
+                            (or reuse cached) audio for every speed/voice they
+                            can reach, then work through them one at a time: play
+                            the word on its own or in a 请说 —— 这个词 frame,
+                            replay as needed, type the tones (e.g. `14` for 1-4)
+                            and get instant scoring. `-`/`+` change the text speed
+                            (±25% in 5% steps); `[`/`]` change how many voices are
+                            in play (1-4, picked per word). Clips cache under
+                            questions/<speed>/<voice>/.
 
     file                    Build a single exam-style mp3: each item read twice
                             with a short gap, then a long gap for you to write an
@@ -20,6 +24,7 @@ Two modes:
 
     python tone_drill.py                  # interactive
     python tone_drill.py --mode file      # build drill.mp3 + drill_key.txt
+    python tone_drill.py --mode generate  # pre-build every clip, then exit
 """
 
 import argparse
@@ -95,26 +100,38 @@ LUCIA_WORDS = {
 ALL_PAIRS = list(LUCIA_WORDS)
 
 # Standard-accent zh-CN voices. Run `edge-tts --list-voices | grep zh-CN`
-# for the full set.
+# for the full set. The interactive drill uses the first `num_voices` of these
+# (see pick_voice); MAX_VOICES caps the '[' / ']' control.
 VOICES = [
     "zh-CN-XiaoxiaoNeural",
-    # "zh-CN-YunjianNeural",
+    "zh-CN-XiaoyiNeural",
+    "zh-CN-YunxiNeural",
+    "zh-CN-YunjianNeural",
 ]
+MAX_VOICES = len(VOICES)
 
-RATE = "+0%"          # try "-15%" for an easier pass, "+15%" for harder
+RATE = "+0%"          # file-mode rate; the interactive drill sets its own (speed)
 GAP_REPEAT_MS = 1500  # between the two readings of the same item
 GAP_ANSWER_MS = 3000  # time to write your answer
 LEAD_IN_MS = 3000     # silence before the first item
 SHUFFLE = True
 COUNT = 20
 
-OUT_DIR = Path("drill_out")
+# Interactive text-speed control ('-' / '+'), as a percentage rate offset.
+SPEED_MIN = -25
+SPEED_MAX = 25
+SPEED_STEP = 5
+SPEED_DEFAULT = 0
+VOICES_DEFAULT = 1
+
+OUT_DIR = Path("drill_out")   # file-mode artefacts only
 OUT_FILE = Path("drill.mp3")
 KEY_FILE = Path("drill_key.txt")
 
-# Lucia mode caches its dictionary audio here, in a per-voice subfolder.
-LUCIA_DIR = Path("lucia")
-LUCIA_VOICE = VOICES[0]
+# Interactive/Lucia clips cache here, keyed by speed then voice:
+#   questions/<speed>/<voice>/<word>.mp3        (word on its own)
+#   questions/<speed>/<voice>/<word>_frame.mp3  (word in the 请说 frame)
+QUESTIONS_DIR = Path("questions")
 LUCIA_OPTIONS = 4          # options shown per question
 LUCIA_DOUBLE_CHANCE = 0.25  # chance a question has two correct options
 
@@ -135,8 +152,39 @@ def pick_items(count: int, seed, shuffle: bool = SHUFFLE):
     return items[:count]
 
 
-async def synth(text: str, voice: str, path: Path):
-    await edge_tts.Communicate(text, voice, rate=RATE).save(str(path))
+async def synth(text: str, voice: str, path: Path, rate: str = RATE):
+    await edge_tts.Communicate(text, voice, rate=rate).save(str(path))
+
+
+def rate_str(speed: int) -> str:
+    """Speed offset (e.g. -15) -> edge-tts rate string ('-15%')."""
+    return f"{speed:+d}%"
+
+
+def speed_tag(speed: int) -> str:
+    """Speed offset -> path-safe folder name ('+0', '-15', '+25')."""
+    return f"{speed:+d}"
+
+
+def pick_voice(word: str, num_voices: int, seed) -> str:
+    """Deterministically choose a voice for `word` from the first `num_voices`.
+
+    Keyed on (word, num_voices, seed): with num_voices == 1 this is always the
+    single primary voice, so dropping the count back to 1 reverts every word to
+    it rather than keeping whatever a higher count had randomly assigned. Bump
+    the count and the same word may land on a different voice.
+    """
+    n = max(1, min(num_voices, len(VOICES)))
+    if n == 1:
+        return VOICES[0]
+    h = hashlib.md5(f"{word}|{n}|{seed}".encode()).hexdigest()
+    return VOICES[int(h, 16) % n]
+
+
+def question_clip(word: str, voice: str, speed: int, frame: bool = False) -> Path:
+    """Cache path for an interactive/Lucia clip at a given speed and voice."""
+    name = f"{word}_frame.mp3" if frame else f"{word}.mp3"
+    return QUESTIONS_DIR / speed_tag(speed) / voice / name
 
 
 def tone_digits(pair: str) -> str:
@@ -241,92 +289,29 @@ def run_file(count: int, seed):
 # Interactive mode (Textual TUI)
 
 
-def clip_path(text: str, voice: str) -> Path:
-    """Stable, cache-friendly path for a synthesized clip."""
-    h = hashlib.md5(f"{voice}|{RATE}|{text}".encode()).hexdigest()[:12]
-    return OUT_DIR / f"iv_{h}.mp3"
-
-
 def build_questions(count: int, seed):
-    """Return question dicts with (cached) clip paths, generating what's missing."""
-    OUT_DIR.mkdir(exist_ok=True)
+    """Select the items and return their question dicts (no audio; clips are
+    pre-generated by build_interactive_clips)."""
     items = pick_items(count, seed)
-
-    questions = []
-    to_make = []  # (text, path)
-    for i, (word, answer) in enumerate(items):
-        voice = VOICES[i % len(VOICES)]
-        frame_text = FRAME.format(word)
-        word_clip = clip_path(word, voice)
-        frame_clip = clip_path(frame_text, voice)
-        for text, path in ((word, word_clip), (frame_text, frame_clip)):
-            if not path.exists():
-                to_make.append((text, path))
-        questions.append({
+    return [
+        {
             "word": word,
             "answer": answer,
-            "voice": voice,
-            "word_clip": word_clip,
-            "frame_clip": frame_clip,
             "user_answer": None,
             "correct": None,
-        })
-
-    if to_make:
-        print(f"Generating {len(to_make)} audio clip(s)…")
-
-        async def _gen():
-            for n, (text, path) in enumerate(to_make, start=1):
-                await synth(text, VOICES[0], path)
-                print(f"  [{n}/{len(to_make)}] {text}")
-
-        asyncio.run(_gen())
-    else:
-        print("All clips cached.")
-
-    return questions
+        }
+        for word, answer in items
+    ]
 
 
-def lucia_clip(word: str, voice: str, frame: bool = False) -> Path:
-    """Path for a Lucia dictionary clip, cached per voice."""
-    name = f"{word}_frame.mp3" if frame else f"{word}.mp3"
-    return LUCIA_DIR / voice / name
-
-
-def build_lucia_clips(voice: str):
-    """Generate (or reuse) the word + sentence clip for every dictionary word."""
-    (LUCIA_DIR / voice).mkdir(parents=True, exist_ok=True)
-
-    to_make = []  # (text, path)
-    for words in LUCIA_WORDS.values():
-        for word in words:
-            word_clip = lucia_clip(word, voice)
-            frame_clip = lucia_clip(word, voice, frame=True)
-            if not word_clip.exists():
-                to_make.append((word, word_clip))
-            if not frame_clip.exists():
-                to_make.append((FRAME.format(word), frame_clip))
-
-    if to_make:
-        print(f"Generating {len(to_make)} Lucia clip(s)…")
-
-        async def _gen():
-            for n, (text, path) in enumerate(to_make, start=1):
-                await synth(text, voice, path)
-                print(f"  [{n}/{len(to_make)}] {text}")
-
-        asyncio.run(_gen())
-    else:
-        print("All Lucia clips cached.")
-
-
-def build_lucia_options(questions, seed, voice: str):
+def build_lucia_options(questions, seed):
     """Attach 4 tone-pair options to each question.
 
     Always at least one option matches the question's tone pair; sometimes two
     (a second word of the same pair), so the drill can reveal that more than one
     answer was correct. The rest are distinct non-matching pairs. Deterministic
-    for a given (seed, index).
+    for a given (seed, index). The TUI derives each option's clip path from its
+    word at play time, since the path depends on the live speed/voice settings.
     """
     for idx, q in enumerate(questions):
         rng = random.Random(f"{seed}-{idx}-lucia")
@@ -347,22 +332,104 @@ def build_lucia_options(questions, seed, voice: str):
         opts += [(p, rng.choice(LUCIA_WORDS[p])) for p in distract_pairs]
         rng.shuffle(opts)
 
-        q["options"] = [
-            {
-                "pair": pair,
-                "word": word,
-                "word_clip": lucia_clip(word, voice),
-                "frame_clip": lucia_clip(word, voice, frame=True),
-            }
-            for pair, word in opts
-        ]
+        q["options"] = [{"pair": pair, "word": word} for pair, word in opts]
+
+
+def all_speeds():
+    """Every speed offset the '-' / '+' control can reach."""
+    return list(range(SPEED_MIN, SPEED_MAX + 1, SPEED_STEP))
+
+
+def reachable_clips(questions, seed):
+    """Every (text, voice, speed, path) the interactive drill could play.
+
+    Covers each prompt word and each Lucia option word, at every speed, for
+    every voice that word can map to as the voice count runs 1..MAX_VOICES —
+    so nothing is ever generated mid-drill.
+    """
+    words = set()
+    for q in questions:
+        words.add(q["word"])
+        for opt in q.get("options", []):
+            words.add(opt["word"])
+
+    jobs = []
+    speeds = all_speeds()
+    for word in sorted(words):
+        voices = {pick_voice(word, n, seed) for n in range(1, MAX_VOICES + 1)}
+        for voice in voices:
+            for speed in speeds:
+                for frame in (False, True):
+                    text = FRAME.format(word) if frame else word
+                    jobs.append((text, voice, speed, question_clip(word, voice, speed, frame)))
+    return jobs
+
+
+def _generate(jobs, concurrency: int = 12):
+    """Synthesize the missing clips in `jobs` (text, voice, speed, path)."""
+    jobs = [job for job in jobs if not job[3].exists()]
+    if not jobs:
+        print("All clips cached.")
+        return
+
+    total = len(jobs)
+    print(f"Generating {total} audio clip(s)…  (Ctrl-C to stop)")
+
+    async def _run():
+        sem = asyncio.Semaphore(concurrency)
+        done = 0
+
+        async def one(text, voice, speed, path):
+            nonlocal done
+            async with sem:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                await synth(text, voice, path, rate_str(speed))
+            done += 1
+            if done % 25 == 0 or done == total:
+                print(f"  [{done}/{total}]")
+
+        await asyncio.gather(*(one(*job) for job in jobs))
+
+    asyncio.run(_run())
+
+
+def build_interactive_clips(questions, seed, concurrency: int = 12):
+    """Pre-generate (or reuse) every clip this run's seed can reach."""
+    _generate(reachable_clips(questions, seed), concurrency)
+
+
+def all_words():
+    """Every word in the corpus: classic names + Lucia dictionary."""
+    words = {word for word, _ in NAMES}
+    for group in LUCIA_WORDS.values():
+        words.update(group)
+    return words
+
+
+def all_clips():
+    """Every clip the drill could ever play, for any seed: the whole corpus at
+    every voice and speed (voice assignment is seed-dependent, so all voices are
+    covered)."""
+    jobs = []
+    for word in sorted(all_words()):
+        for voice in VOICES:
+            for speed in all_speeds():
+                for frame in (False, True):
+                    text = FRAME.format(word) if frame else word
+                    jobs.append((text, voice, speed, question_clip(word, voice, speed, frame)))
+    return jobs
+
+
+def build_all_clips(concurrency: int = 12):
+    """Pre-generate the entire corpus so every future run is fully cached."""
+    _generate(all_clips(), concurrency)
 
 
 def run_interactive(count: int, seed):
     check_bin("ffplay")
     questions = build_questions(count, seed)
-    build_lucia_clips(LUCIA_VOICE)
-    build_lucia_options(questions, seed, LUCIA_VOICE)
+    build_lucia_options(questions, seed)
+    build_interactive_clips(questions, seed)
     # Imported lazily so `--mode file` doesn't require textual.
     from tui import DrillApp
     DrillApp(questions=questions, seed=seed).run()
@@ -375,8 +442,9 @@ def run_interactive(count: int, seed):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
     parser.add_argument(
-        "--mode", choices=("interactive", "file"), default="interactive",
-        help="interactive TUI drill (default) or build the exam mp3 file",
+        "--mode", choices=("interactive", "file", "generate"), default="interactive",
+        help="interactive TUI drill (default), build the exam mp3 file, or "
+             "'generate' to pre-build every clip (all words/voices/speeds) and exit",
     )
     parser.add_argument("--count", type=int, default=COUNT, help="number of items")
     parser.add_argument(
@@ -384,6 +452,10 @@ def main():
         help="ordering seed (default: random; reuse a printed seed to reproduce)",
     )
     args = parser.parse_args()
+
+    if args.mode == "generate":
+        build_all_clips()
+        return
 
     if args.seed is None:
         args.seed = random.randrange(1_000_000)

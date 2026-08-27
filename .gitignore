@@ -222,6 +222,7 @@ __marimo__/
 
 # Generated drill output
 drill_out/
+questions/
 lucia/
 drill.mp3
 test.mp3
