@@ -139,12 +139,23 @@ export class DrillApp {
 
     inner.append(el("div", "dim small", `Question ${this.idx + 1}`));
 
+    // Prompt word with explicit play controls on the right (mouse-friendly),
+    // styled and aligned like the per-option play buttons below.
+    const hanziRow = el("div", "hanzi-row");
     if (this.showChars || answered) {
-      inner.append(el("div", "hanzi", q.word));
+      hanziRow.append(el("div", "hanzi", q.word));
     } else {
       const masked = [...q.word].map(() => "＿").join(" ");
-      inner.append(el("div", "hanzi dim", masked));
+      hanziRow.append(el("div", "hanzi dim", masked));
     }
+    const playSentence = el("button", "opt-sentence", "▶ 句");
+    playSentence.title = "play it inside a sentence  (⇧w)";
+    playSentence.onclick = () => this.requestPlay(q.word, true);
+    const playWord = el("button", "opt-sentence", "▶");
+    playWord.title = "play the word  (w)";
+    playWord.onclick = () => this.requestPlay(q.word, false);
+    hanziRow.append(playSentence, playWord);
+    inner.append(hanziRow);
 
     if (this.lucia) {
       inner.append(...this.luciaView(q, answered));
