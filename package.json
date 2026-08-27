@@ -4,10 +4,15 @@
   "private": true,
   "description": "Static web port of the tone perception drill.",
   "scripts": {
-    "build": "tsc",
-    "watch": "tsc --watch"
+    "build": "tsc && esbuild src/main.ts --bundle --format=esm --outfile=js/main.js",
+    "watch": "esbuild src/main.ts --bundle --format=esm --outfile=js/main.js --watch"
   },
   "devDependencies": {
+    "@types/seedrandom": "^3.0.8",
+    "esbuild": "^0.28.2",
     "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "seedrandom": "^3.0.5"
   }
 }

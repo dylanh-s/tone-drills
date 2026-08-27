@@ -10,7 +10,7 @@ import {
   SPEED_TAG,
   VOICES,
 } from "./data.js";
-import { hashStr, Rng } from "./rng.js";
+import { Rng } from "./rng.js";
 
 export type Verdict = "correct" | "sandhi" | "wrong";
 
@@ -49,8 +49,9 @@ export function judge(answerPair: string, guessPair: string): Verdict {
 export function pickVoice(word: string, numVoices: number, seed: number): string {
   const n = Math.max(1, Math.min(numVoices, VOICES.length));
   if (n === 1) return VOICES[0];
-  const h = hashStr(`${word}|${n}|${seed}`);
-  return VOICES[h % n];
+  // Deterministic per (word, n, seed): a fresh seeded draw, so the voice is
+  // stable across renders but shifts when the count changes.
+  return VOICES[new Rng(`${word}|${n}|${seed}`).int(n)];
 }
 
 /** Cache path (relative URL) for a clip at the fixed speed and a given voice. */

@@ -1,37 +1,24 @@
-// Small seeded RNG. Replaces Python's `random` module. It does NOT reproduce
-// CPython's Mersenne-Twister sequences — the web app only needs draws that are
-// stable for a given seed within the site, not byte-identical to the CLI.
+// Seeded RNG backed by `seedrandom`, plus the array helpers the drill needs.
+// Replaces Python's `random` module. Draws are stable for a given seed within
+// the site, but not byte-identical to the CPython CLI.
 
-/** Deterministic 32-bit hash of a string (FNV-1a). Used to derive numeric
- *  sub-seeds from strings like `${seed}-${idx}-lucia`, replacing Python's md5. */
-export function hashStr(s: string): number {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return h >>> 0;
-}
+import seedrandom from "seedrandom";
 
-/** mulberry32 — a compact, well-distributed seeded PRNG. */
 export class Rng {
-  private state: number;
+  private next: () => number;
 
   constructor(seed: number | string) {
-    this.state = (typeof seed === "number" ? seed >>> 0 : hashStr(seed)) || 1;
+    this.next = seedrandom(String(seed));
   }
 
   /** Float in [0, 1). */
   random(): number {
-    let t = (this.state += 0x6d2b79f5);
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    return this.next();
   }
 
   /** Integer in [0, n). */
   int(n: number): number {
-    return Math.floor(this.random() * n);
+    return Math.floor(this.next() * n);
   }
 
   /** In-place Fisher–Yates shuffle; returns the same array. */

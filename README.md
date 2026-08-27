@@ -13,8 +13,8 @@ control is kept.
 ### Run locally
 
 ```bash
-npm install      # one-time: installs the TypeScript compiler
-npm run build    # compiles src/*.ts -> js/*.js
+npm install      # one-time: dev deps (TypeScript + esbuild)
+npm run build    # type-check, then bundle src/ -> js/main.js
 python3 -m http.server 8000   # or any static server
 # open http://localhost:8000/
 ```
@@ -29,7 +29,7 @@ Add `?seed=123` to the URL to reproduce a specific draw.
 |------|------|
 | `index.html` | page shell + styles (the k9s palette) |
 | `src/*.ts` | source: `data`, `rng`, `logic`, `audio`, `app`, `main` |
-| `js/*.js` | compiled output (committed) |
+| `js/main.js` | bundled output from esbuild (committed) |
 | `questions/+0/<voice>/<word>.mp3` | pre-generated clips (bare + `_frame`) |
 
 The web port uses its own seeded RNG, so a given seed is stable within the site
