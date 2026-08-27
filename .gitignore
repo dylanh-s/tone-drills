@@ -231,3 +231,7 @@ drill_key.txt
 
 # Node / TypeScript web build
 node_modules/
+
+# Built bundle (produced by npm run build / CI, not committed)
+js/
+_site/
