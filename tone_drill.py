@@ -366,8 +366,13 @@ def reachable_clips(questions, seed):
 
 
 def _generate(jobs, concurrency: int = 12):
-    """Synthesize the missing clips in `jobs` (text, voice, speed, path)."""
-    jobs = [job for job in jobs if not job[3].exists()]
+    """Synthesize the missing clips in `jobs`, at most `concurrency` at a time.
+
+    Each job is a 4-tuple ``(text, voice, speed, path)`` — the string to speak,
+    the voice to use, the speed offset, and the mp3 to write. So ``job[3]`` is
+    the output path; we skip jobs whose file already exists (cache hit).
+    """
+    jobs = [job for job in jobs if not job[3].exists()]  # job[3] == path
     if not jobs:
         print("All clips cached.")
         return
@@ -376,18 +381,23 @@ def _generate(jobs, concurrency: int = 12):
     print(f"Generating {total} audio clip(s)…  (Ctrl-C to stop)")
 
     async def _run():
+        # edge-tts is network-bound, so we fire many requests at once — but a
+        # semaphore caps it at `concurrency` in flight so we don't open hundreds
+        # of connections (and risk being throttled). Each `one()` waits to
+        # acquire a slot, does its synth, then releases it on exit.
         sem = asyncio.Semaphore(concurrency)
         done = 0
 
         async def one(text, voice, speed, path):
             nonlocal done
-            async with sem:
+            async with sem:  # hold one of the `concurrency` slots while synthing
                 path.parent.mkdir(parents=True, exist_ok=True)
                 await synth(text, voice, path, rate_str(speed))
             done += 1
             if done % 25 == 0 or done == total:
                 print(f"  [{done}/{total}]")
 
+        # Schedule every job at once; the semaphore is what actually throttles.
         await asyncio.gather(*(one(*job) for job in jobs))
 
     asyncio.run(_run())
