@@ -30,7 +30,7 @@ export class DrillApp {
   private seed: number;
   private idx = 0;
   private lucia = false;
-  private showChars = true;
+  private showChars = false;
   private showOptChars = false;
   private showHelp = false;
   private results = false;
@@ -38,20 +38,31 @@ export class DrillApp {
   private selected: number | null = null;
   private flash = "";
   private numVoices = VOICES_DEFAULT;
+  private onMenu?: () => void;
 
   private root: HTMLElement;
+  private keyHandler = (e: KeyboardEvent) => this.onKey(e);
 
-  constructor(seed: number, count = COUNT) {
+  constructor(seed: number, opts: { lucia?: boolean; count?: number; onMenu?: () => void } = {}) {
     this.seed = seed;
-    this.questions = buildQuestions(count, seed);
+    this.lucia = opts.lucia ?? false;
+    this.onMenu = opts.onMenu;
+    this.questions = buildQuestions(opts.count ?? COUNT, seed);
     buildLuciaOptions(this.questions, seed);
     this.root = document.getElementById("app")!;
   }
 
   start(): void {
-    window.addEventListener("keydown", (e) => this.onKey(e));
+    window.addEventListener("keydown", this.keyHandler);
     this.autoplayPrompt();
     this.renderAll();
+  }
+
+  private exitToMenu(): void {
+    if (!this.onMenu) return;
+    stopPlayback();
+    window.removeEventListener("keydown", this.keyHandler);
+    this.onMenu();
   }
 
   // -- derived state ----------------------------------------------------
@@ -401,6 +412,7 @@ export class DrillApp {
     footer.id = "footer";
     type Item = [string, string, () => void];
     let items: Item[];
+    const menuItem: Item = ["esc", "menu", () => this.exitToMenu()];
     if (this.results) {
       items = [
         ["↻", "restart", () => this.restart()],
@@ -432,6 +444,7 @@ export class DrillApp {
         ["?", "help", () => this.toggleHelp()],
       ];
     }
+    if (this.onMenu) items.push(menuItem);
     for (const [key, desc, fn] of items) {
       const b = el("button", "fbtn");
       b.append(el("span", "key", ` ${key} `), el("span", "fdesc", ` ${desc} `));
@@ -560,6 +573,8 @@ export class DrillApp {
       if (key === "Escape" || key === "?") this.toggleHelp();
       return;
     }
+
+    if (key === "Escape") { this.exitToMenu(); e.preventDefault(); return; }
 
     if (this.results) {
       if (key === "r") this.restart();

@@ -1,4 +1,5 @@
 import { DrillApp } from "./app.js";
+import { Menu } from "./menu.js";
 
 // Seed from ?seed= for shareable/reproducible draws, else random.
 const params = new URLSearchParams(location.search);
@@ -7,4 +8,10 @@ const seed = raw !== null && /^\d+$/.test(raw)
   ? parseInt(raw, 10)
   : Math.floor(Math.random() * 1_000_000);
 
-new DrillApp(seed).start();
+function showMenu(): void {
+  new Menu((choice) => {
+    new DrillApp(seed, { lucia: choice === "lucia", onMenu: showMenu }).start();
+  }).start();
+}
+
+showMenu();

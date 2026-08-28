@@ -170,6 +170,35 @@
     .miss-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 12px; align-items: center; }
     .miss-row > .right { text-align: right; }
 
+    /* -- menu -- */
+    .menu-brand { padding: 4px 2px; }
+    .menu-body { align-items: stretch; text-align: left; gap: 10px; width: 100%; }
+    .menu-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      text-align: left;
+      font-family: var(--mono);
+      padding: 12px 14px;
+      background: var(--bg2);
+      color: var(--white);
+      border: 1px solid #2c343d;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .menu-item:hover { border-color: var(--accent); }
+    .menu-item.sel { border-color: var(--accent); background: #182531; }
+    .menu-item.disabled {
+      cursor: default;
+      opacity: 0.5;
+    }
+    .menu-item.disabled:hover { border-color: #2c343d; }
+    .menu-item.disabled .key { background: var(--dim); color: #0c0c0c; }
+    .menu-text { display: flex; flex-direction: column; gap: 2px; }
+    .menu-title { font-size: 17px; color: var(--white); }
+    .menu-hint { margin: 0; }
+
     /* -- help -- */
     .help { align-items: stretch; text-align: left; gap: 4px; }
     .section-title { margin-top: 8px; }
