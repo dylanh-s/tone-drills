@@ -1,6 +1,8 @@
 # tone-drills
 
-Drill mandarin tones for weird characters.
+Drill mandarin tones for weird characters. Try it now for free at https://dylanh-s.github.io/tone-drills/
+
+We have a web version, and a slightly more feature rich version which you can play in the terminal. This repo contains the code for both.
 
 ## Web version (static site)
 
@@ -33,7 +35,7 @@ generator keep separate copies of the word lists.
 
 **1. The drill —** [`src/data.ts`](src/data.ts):
 
-- **`NAMES`** — the surname pairs used in classic mode, as `["字", "1-2"]`
+- **`NAMES`** — the surname pairs used in classic mode, as `["汉字", "4-2"]`
   (word + its tone-pair answer).
 - **`LUCIA_WORDS`** — common words grouped by tone pair (`"1-2": ["中国", …]`),
   used as the lucia-mode options.
@@ -44,7 +46,9 @@ Add entries here and the drill picks them up automatically.
 pre-generated clips at `questions/+0/<voice>/<word>.mp3` (one per voice, plus a
 `_frame` version). To create them, add the same word to the matching list in
 [`tone_drill.py`](tone_drill.py) (its own `NAMES` / `LUCIA_WORDS`), then run the
-generator (needs `edge-tts` + `ffmpeg`, see `requirements.txt`):
+generator (needs `edge-tts` + `ffmpeg`, see `requirements.txt`) to create audio for all
+new words, or just start playing the console version and it will generate the audio files 
+as needed:
 
 ```bash
 python tone_drill.py --mode generate   # caches audio for every word/voice
@@ -57,7 +61,7 @@ folder.
 > word to both: the first so the drill shows it, the second so the generator
 > makes its audio.
 
-**To add words to the live website:** make both edits, generate the audio, and
+**To add words to the live website:** make both edits, generate _all_ the audio, and
 open a PR that **includes the new `questions/+0/…` mp3 files**. CI builds the
 JavaScript but does **not** synthesize audio — if the clips aren't committed, the
 new words will be silent on the deployed site.
